@@ -62,13 +62,13 @@ public:
         VertexLabel()
             : distance(INFTY)
             , parent(-1)
-            , timeStamp(-1)
+            , timeStamp(0)
         {
         }
         inline void reset(int time)
         {
-            distance = INFTY;
             parent = -1;
+            distance = INFTY;
             timeStamp = time;
         }
         size_t distance;
@@ -107,6 +107,7 @@ public:
         , upDownPathRoot(noVertexID)
         , unpackedPath(data.getChordalGraph().numberOfNodes())
         , rightIndex(0)
+        , tentativeDistance(INFTY)
         , timeStamp(0)
         , statsCounter(ELIM_TREE_METRIC_NAMES, ELIM_TREE_PHASE_NAMES)
     {
@@ -162,6 +163,7 @@ public:
     inline void clear()
     {
         statsCounter.startPhase(CLEAR);
+        tentativeDistance = INFTY;
         ++timeStamp;
         if (timeStamp == 0) {
             // reset distance arrays
@@ -177,14 +179,17 @@ public:
     {
         statsCounter.startPhase(INIT_DS);
         statsCounter.count(NUM_UPDATED_FWD_LABELS);
-        VertexLabel& sourcelabel = getUpLabel(source);
+        VertexLabel& sourcelabel = upLabels[source];
         sourcelabel.distance = 0;
         sourcelabel.parent = source;
+        sourcelabel.timeStamp = timeStamp;
 
         statsCounter.count(NUM_UPDATED_BWD_LABELS);
-        VertexLabel& targetlabel = getDownLabel(target);
+        VertexLabel& targetlabel = downLabels[target];
         targetlabel.distance = 0;
         targetlabel.parent = target;
+        targetlabel.timeStamp = timeStamp;
+        
         statsCounter.stopPhase(INIT_DS);
     }
 
@@ -368,6 +373,12 @@ public:
         statsCounter.count(NUM_EXPLORED_FWD_VERTICES);
 
         VertexLabel& currentLabel = getUpLabel(vertex);
+
+        if (currentLabel.distance >= tentativeDistance) {
+            statsCounter.stopPhase(RELAX_UPWARD);
+            return;
+        }
+
         upGraph.doForAllOutgoingEdges(vertex, [&](auto /* vertex */, auto to, auto weight, auto /* edgeId */) {
             statsCounter.count(NUM_OF_RELAXED_FWD_EDGES);
             VertexLabel& toLabel = getUpLabel(to);
@@ -375,6 +386,8 @@ public:
                 statsCounter.count(NUM_UPDATED_FWD_LABELS);
                 toLabel.distance = currentLabel.distance + weight;
                 toLabel.parent = vertex;
+
+                tentativeDistance = std::min(tentativeDistance, toLabel.distance + getDownLabel(to).distance);
             }
         });
         statsCounter.stopPhase(RELAX_UPWARD);
@@ -385,16 +398,25 @@ public:
         statsCounter.startPhase(RELAX_DOWNWARD);
         statsCounter.count(NUM_EXPLORED_BWD_VERTICES);
         VertexLabel& currentLabel = getDownLabel(vertex);
+
+        if (currentLabel.distance >= tentativeDistance) {
+            statsCounter.stopPhase(RELAX_UPWARD);
+            return;
+        }
+
         downGraph.doForAllOutgoingEdges(
             vertex,
             [&](auto /* vertex */, auto to, auto weight, auto /* edgeId */) {
                 statsCounter.count(NUM_OF_RELAXED_BWD_EDGES);
                 VertexLabel& toLabel = getDownLabel(to);
+
                 if (currentLabel.distance + weight < toLabel.distance) {
                     statsCounter.count(NUM_UPDATED_BWD_LABELS);
 
                     toLabel.distance = currentLabel.distance + weight;
                     toLabel.parent = vertex;
+
+                    tentativeDistance = std::min(tentativeDistance, toLabel.distance + getUpLabel(to).distance);
                 }
             });
         statsCounter.stopPhase(RELAX_DOWNWARD);
@@ -467,6 +489,8 @@ private:
 
     std::vector<PathEdge> unpackedPath;
     size_t rightIndex;
+
+    size_t tentativeDistance;
 
     int timeStamp;
 
