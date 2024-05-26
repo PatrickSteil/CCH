@@ -158,9 +158,14 @@ public:
         clear();
         initSource(source);
 
-        while (!QisEmpty()) {
-            settleVertex([&](auto u, auto /* uLabel */) { return (u == target); });
+        // "real" target pruning, i.e., we stop if either the Q is empty or we popped the target
+        bool stop = false;
+
+        while (!stop) {
+            stop = (noVertexID == settleVertex([&](auto u, auto /* uLabel */) { return (u == target); }));
+            stop |= QisEmpty();
         }
+        
         statsCounter.stopPhase(QUERY);
     }
 
