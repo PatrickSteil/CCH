@@ -115,7 +115,7 @@ public:
         const VertexID u = uLabel - &(labels[0]);
 
         if (stopCrit(u, uLabel))
-            return u;
+            return noVertexID;
 
         if (OUTGOING) {
             graph.doForAllOutgoingEdges(
